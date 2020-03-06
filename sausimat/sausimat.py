@@ -3,6 +3,7 @@ from time import sleep
 import RPi.GPIO as GPIO
 import asyncio
 from sausimat.mfrc522 import MFRC522Sausimat
+from sausimat.rotary import Rotary
 
 
 class Sausimat(MFRC522Sausimat):
@@ -12,6 +13,7 @@ class Sausimat(MFRC522Sausimat):
         self.time_to_stop = 600
         self.detect_interval = 0.1
         self.remove_callback = None
+        self.rotary = Rotary(17,27,22)
 
     async def run(self):
         try:
@@ -19,9 +21,10 @@ class Sausimat(MFRC522Sausimat):
             check_rifd_task = asyncio.create_task(self.check_rifd())
             #check_volume_task = asyncio.create_task(self.rotary.run(self.set_volume))
 
+            self.rotary.run()
+
             #await check_volume_task
             await check_rifd_task
-
 
         except KeyboardInterrupt:
             GPIO.cleanup()
