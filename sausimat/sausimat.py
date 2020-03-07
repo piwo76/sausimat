@@ -1,19 +1,26 @@
+import json
 from datetime import datetime
+from pathlib import Path
 from time import sleep
 import RPi.GPIO as GPIO
 import asyncio
 from sausimat.mfrc522 import MFRC522Sausimat
-from sausimat.rotary import Rotary
+from sausimat.rotary import Rotary, Switch
+from sausimat.mopidy import SausimatMopidy
 
 
 class Sausimat(MFRC522Sausimat):
     def __init__(self):
         super().__init__()
+        self.initial_volume = 5
         self.active_id = None
         self.time_to_stop = 600
         self.detect_interval = 0.1
         self.remove_callback = None
-        self.rotary = Rotary(17,27,22)
+        self.rotary = Rotary(17,27,22, initial_counter=self.initial_volume, callback=self.set_volume)
+        self.switch = Switch(18,23,500)
+        self.mopidy = SausimatMopidy()
+        self.mopidy.client.setvol(self.initial_volume)
 
     async def run(self):
         try:
@@ -22,6 +29,7 @@ class Sausimat(MFRC522Sausimat):
             #check_volume_task = asyncio.create_task(self.rotary.run(self.set_volume))
 
             self.rotary.run()
+            self.switch.run(self.previous, self.next)
 
             #await check_volume_task
             await check_rifd_task
@@ -50,6 +58,15 @@ class Sausimat(MFRC522Sausimat):
 
     def set_volume(self, value):
         print(f"volume: {value}")
+        self.mopidy.client.setvol(value)
+
+    def next(self, channel):
+        print(f"Next track")
+        self.mopidy.client.next()
+
+    def previous(self, channnel):
+        print(f"previous track")
+        self.mopidy.client.previous()
 
     async def check_volume(self):
         while True:
@@ -57,6 +74,13 @@ class Sausimat(MFRC522Sausimat):
             await asyncio.sleep(0.1)
 
     def new_card(self, id, text):
+        tag_playlist_file = Path(f'/media/playlists/{id}.json')
+        if tag_playlist_file.exists():
+            with open(tag_playlist_file) as file:
+                playlist_json = json.load(file)
+                playlist = playlist_json['playlist']
+                self.mopidy.play(playlist=playlist)
+
         print(f"new card: id = {id}, text = {text}")
 
     def card_removed(self):
@@ -64,4 +88,5 @@ class Sausimat(MFRC522Sausimat):
         self.remove_callback = None
         self.active_id = None
         self.detect_interval = 0.1
+        self.mopidy.client.stop()
 

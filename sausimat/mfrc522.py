@@ -4,6 +4,9 @@ from pirc522 import RFID
 import RPi.GPIO as GPIO
 
 class RFIDSausimat(RFID):
+    def __init__(self):
+        super().__init__( pin_rst=25, pin_irq=24, pin_mode=GPIO.BCM)
+
     def wait_for_tag(self, remove_callback = None):
         # enable IRQ on detect
         self.init()
