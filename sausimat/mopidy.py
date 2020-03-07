@@ -26,6 +26,13 @@ class SausimatMopidy:
                 sleep(2)
         self.logger.info(f'Successfully connected!')
 
+    def check_connection(self):
+        try:
+            self.client.ping()
+        except:
+            self.logger.info(f'Reconnecting to MPD...')
+            self.connect()
+
     def rescan_local_library(self):
         self.logger.info(f'Rescan local library...')
         self.logger.info(f'Stopping mopidy...')
@@ -60,6 +67,8 @@ class SausimatMopidy:
             self.client.play(0)
         except:
             self.logger.error(f'Could not play the requested tracks')
+            sleep(1)
+            self.check_connection()
 
     def create_playlist(self, name, search_string=None, overwrite=False, type='file'):
         self.logger.info(f'Creating playlist:')

@@ -5,7 +5,6 @@ from datetime import datetime
 from pathlib import Path
 from time import sleep
 import RPi.GPIO as GPIO
-import asyncio
 from sausimat.mfrc522 import MFRC522Sausimat
 from sausimat.rotary import Rotary, Switch
 from sausimat.mopidy import SausimatMopidy
@@ -34,16 +33,22 @@ class Sausimat(MFRC522Sausimat):
         self.mopidy = SausimatMopidy()
         self.mopidy.client.setvol(self.initial_volume)
 
-    async def run(self):
+    def run(self):
         try:
             self.logger.info('Starting Sausimat')
-            check_rifd_task = asyncio.create_task(self.check_rifd())
+            #check_rifd_task = asyncio.create_task(self.check_rifd())
             #check_volume_task = asyncio.create_task(self.rotary.run(self.set_volume))
 
             self.rotary.run()
             self.switch.run(self.previous, self.next)
 
-            await check_rifd_task
+            rfid_thread = threading.Thread(target=self.check_rifd)
+            rfid_thread.start()
+
+            check_connection_thread = threading.Thread(target=self.check_connection)
+            check_connection_thread.start()
+
+            #await check_rifd_task
             self.logger.info('Sausimat running...')
 
         except KeyboardInterrupt:
@@ -52,7 +57,7 @@ class Sausimat(MFRC522Sausimat):
         except:
             self.logger.error('Sausimat::run: An unknown error occured')
 
-    async def check_rifd(self):
+    def check_rifd(self):
         self.logger.info('Waiting for RFID...')
         while True:
             id, text = self.read_no_block(remove_callback=self.remove_callback)
@@ -66,7 +71,12 @@ class Sausimat(MFRC522Sausimat):
                 # card is still on --> keep reading
                 id = None
 
-            await asyncio.sleep(self.detect_interval)
+            sleep(self.detect_interval)
+
+    def check_connection(self):
+        while True:
+            self.mopidy.check_connection()
+            sleep(10)
 
     def set_volume(self, value):
         self.logger.info(f'Set volume to {value}')
@@ -85,6 +95,7 @@ class Sausimat(MFRC522Sausimat):
             self.logger.info(f'New card detected: id = {id}, text = {text}')
             self.shutdown_initiated_time = None
             if id == self.shutdown_card:
+                self.logger.info(f'This is the shutdown card --> Initiating shutdown')
                 self.shutdown_initiated_time = datetime.now()
                 return
 
@@ -117,11 +128,13 @@ class Sausimat(MFRC522Sausimat):
         self.logger.info('Card removed')
         if self.shutdown_initiated_time:
             if (datetime.now() - self.shutdown_initiated_time).total_seconds() > self.time_to_shutdown:
+                self.logger.info(f'Card was on longer than {self.time_to_shutdown} --> Shutdown!')
                 self.mopidy.play(track='local:track:theme2.mp3')
                 sleep(4)
                 subprocess.run(["sudo", "shutdown"])
                 return
             else:
+                self.logger.info(f'Card was on shorter than {self.time_to_shutdown} --> Restart!')
                 self.mopidy.play(track='local:track:bis_spaeter.mp3')
                 sleep(5)
                 subprocess.run(["sudo", "reboot"])
