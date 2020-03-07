@@ -18,7 +18,7 @@ class Sausimat(MFRC522Sausimat):
         self.detect_interval = 0.1
         self.remove_callback = None
         self.rotary = Rotary(17,27,22, initial_counter=self.initial_volume, callback=self.set_volume)
-        self.switch = Switch(18,23,500)
+        self.switch = Switch(12,23,500)
         self.mopidy = SausimatMopidy()
         self.mopidy.client.setvol(self.initial_volume)
 
