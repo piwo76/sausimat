@@ -1,3 +1,4 @@
+import logging
 import time
 from pyky040 import pyky040
 import threading
@@ -5,6 +6,11 @@ import RPi.GPIO as GPIO
 
 class Switch:
     def __init__(self, pin_a, pin_b, bouncetime = 500):
+        self.logger = logging.getLogger('sausimat')
+        self.logger.info(f'Initializing 3-way switch:')
+        self.logger.info(f'  PIN_A = {pin_a}')
+        self.logger.info(f'  PIN_B  = {pin_b}')
+        self.logger.info(f'  BOUNCETIME  = {bouncetime}')
         self.PIN_A = pin_a
         self.PIN_B = pin_b
         self.BOUNCETIME = bouncetime
@@ -16,10 +22,20 @@ class Switch:
     def run(self, callback_a = None, callback_b = None):
         GPIO.add_event_detect(self.PIN_A, GPIO.RISING, callback=callback_a, bouncetime=self.BOUNCETIME)
         GPIO.add_event_detect(self.PIN_B, GPIO.RISING, callback=callback_b, bouncetime=self.BOUNCETIME)
+        self.logger.info(f'Switch started and listening...')
 
 
 class Rotary:
     def __init__(self, clk, dt, sw, initial_counter = 0, scale_min = 0, scale_max = 100, step = 1, callback=None):
+        self.logger = logging.getLogger('sausimat')
+        self.logger.info(f'Initializing rotary:')
+        self.logger.info(f'  CLK = {clk}')
+        self.logger.info(f'  CT  = {dt}')
+        self.logger.info(f'  SW  = {sw}')
+        self.logger.info(f'  scale_min  = {scale_min}')
+        self.logger.info(f'  scale_max  = {scale_max}')
+        self.logger.info(f'  step  = {step}')
+        self.logger.info(f'  initial value  = {initial_counter}')
         self.CLK = clk
         self.DT = dt
         self.SW = sw
@@ -44,6 +60,4 @@ class Rotary:
 
         # Launch the thread
         my_thread.start()
-
-    def my_callback(self, scale_position):
-        print('The scale position is {}'.format(scale_position))
+        self.logger.info(f'Rotary started and listening...')
