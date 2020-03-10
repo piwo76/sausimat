@@ -25,7 +25,7 @@ class Sausimat(MFRC522Sausimat):
         self.remove_time = None
         self.detect_interval = 0.1
         self.remove_callback = None
-        self.shutdown_card = 857019415392
+        self.shutdown_card = 77688747180
         self.shutdown_initiated_time = None
         self.time_to_shutdown = 5
         self.rotary = Rotary(17,27,22, initial_counter=self.initial_volume, callback=self.set_volume)
