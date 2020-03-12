@@ -7,6 +7,14 @@ class RFIDSausimat(RFID):
     def __init__(self):
         super().__init__( pin_rst=25, pin_irq=24, pin_mode=GPIO.BCM)
 
+    def set_antenna(self, state):
+        if state == True:
+            current = self.dev_read(self.reg_tx_control)
+            if ~(current & 0x06):
+                self.set_bitmask(self.reg_tx_control, 0x07)
+        else:
+            self.clear_bitmask(self.reg_tx_control, 0x07)
+
     def wait_for_tag(self, remove_callback = None):
         # enable IRQ on detect
         self.init()
