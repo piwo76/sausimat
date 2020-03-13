@@ -20,7 +20,7 @@ setuptools.setup(
     ],
     python_requires='>=3.6.0',
     entry_points={
-        'console_scripts': ['sausimat=sausimat.start:run'],
+        'console_scripts': ['sausimat=sausimat.start:run', 'rescan_library=sausimat.start:rescan_library', 'rescan_library=sausimat.start:create_playlist'],
     },
     classifiers=[
         "Programming Language :: Python :: 3",

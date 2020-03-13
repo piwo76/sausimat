@@ -18,6 +18,8 @@ if dir[-1] == '/':
     dir = dir[:-1]
 
 mopidy = SausimatMopidy()
+#mopidy.rescan_local_library()
+
 mopidy.create_playlist(args.name, search_string=f'{dir}/*', overwrite=args.overwrite)
 
 if args.tag:
@@ -25,4 +27,3 @@ if args.tag:
     with open(f'/media/playlists/{args.tag}.json', 'w') as outfile:
         json.dump(content, outfile)
 
-mopidy.rescan_local_library()
