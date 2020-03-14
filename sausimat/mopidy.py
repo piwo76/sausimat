@@ -40,6 +40,7 @@ class SausimatMopidy:
         sleep(5)
         self.logger.info(f'Local scan...')
         subprocess.run(["sudo", "mopidyctl", "local", "scan"])
+        sleep(15)
         self.logger.info(f'Starting mopidy...')
         subprocess.run(["sudo", "systemctl", "start", "mopidy"])
         self.connect()
