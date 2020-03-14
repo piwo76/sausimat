@@ -89,8 +89,12 @@ class SausimatMopidy:
 
         if search_string:
             results = self.client.search(type, search_string)
+            if not results:
+                self.logger.error(f'No tracks found!!')
             if type == 'file':
                 for result in results:
+                    f = result['file']
+                    self.logger.info(f'adding {f}')
                     self.client.playlistadd(name, result['file'])
         self.logger.info(f'playlist created')
 

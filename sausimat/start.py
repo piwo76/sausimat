@@ -44,10 +44,10 @@ def rescan_library():
     print('done!')
 
 def create_playlist():
-    #logger = logging.getLogger('sausimat')
-    #logger.info(f'Stopping Sausimat...')
-    #subprocess.run(["sudo", "systemctl", "stop", "sausimat.service"])
-    #sleep(5)
+    logger = logging.getLogger('sausimat')
+    logger.info(f'Stopping Sausimat...')
+    subprocess.run(["sudo", "systemctl", "stop", "sausimat.service"])
+    sleep(5)
 
     tag = None
     manual_tag = True if input('%s (y/N)? ' % 'Manually enter tag').lower() == 'y' else False
