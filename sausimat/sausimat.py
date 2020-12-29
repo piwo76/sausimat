@@ -125,8 +125,7 @@ class Sausimat(MFRC522Sausimat):
                         volume_gain = playlist_json.get('volume_gain')
                         self.logger.info(f'volume_gain = {volume_gain}')
                         if volume_gain:
-                            cur_vol = self.get_volume()
-                            new_vol = int(cur_vol) + int(volume_gain)
+                            new_vol = int(self.initial_volume) + int(volume_gain)
                             self.set_volume(new_vol)
                         else:
                             self.set_volume(self.initial_volume)
