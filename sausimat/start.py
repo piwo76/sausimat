@@ -9,12 +9,14 @@ from sausimat.mopidy import SausimatMopidy
 
 from sausimat.sausimat import Sausimat
 
+
 def read_rfid():
     rdr = MFRC522Sausimat()
     while True:
         id, text = rdr.read_no_block()
         if id:
             return id
+
 
 def hex_tag_to_nr(hex_tag):
     splitted_tag = hex_tag.split(' ')
@@ -37,11 +39,13 @@ def run():
     sausimat = Sausimat()
     sausimat.run()
 
+
 def rescan_library():
     mopidy = SausimatMopidy()
     print('rescanning library...')
     mopidy.rescan_local_library()
     print('done!')
+
 
 def create_playlist():
     logger = logging.getLogger('sausimat')
@@ -50,14 +54,17 @@ def create_playlist():
     sleep(5)
 
     tag = None
-    manual_tag = True if input('%s (y/N)? ' % 'Manually enter tag').lower() == 'y' else False
+    manual_tag = True if input('%s (y/N)? ' %
+                               'Manually enter tag').lower() == 'y' else False
     if manual_tag:
         tag = input('Enter hex tag in for XX XX XX XX: ')
         tag = hex_tag_to_nr(tag)
+        print(f'The new cards id is: {tag}')
 
     name = input('Playlist Name: ')
     dir = input('Directory: ')
-    overwrite = True if input('%s (y/N): ' % 'Overwrite').lower() == 'y' else False
+    overwrite = True if input('%s (y/N): ' %
+                              'Overwrite').lower() == 'y' else False
     repeat = True if input('%s (y/N): ' % 'Repeat').lower() == 'y' else False
     shuffle = True if input('%s (y/N): ' % 'Shuffle').lower() == 'y' else False
     if not tag:
@@ -79,4 +86,3 @@ def create_playlist():
             json.dump(content, outfile)
     subprocess.run(["sudo", "systemctl", "start", "sausimat.service"])
     sleep(5)
-
