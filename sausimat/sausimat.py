@@ -82,6 +82,15 @@ class Sausimat(MFRC522Sausimat):
         self.logger.info(f'Set volume to {value}')
         self.mopidy.client.setvol(value)
 
+    def get_volume(self):
+        self.logger.info(f'Get volume')
+        cur_vol = self.mopidy.client.status().get('volume')
+        if not cur_vol:
+            return self.initial_volume
+        self.logger.info(f'current volume: {cur_vol}')
+        return cur_vol
+
+
     def next(self, channel):
         self.logger.info('Next track')
         self.mopidy.client.next()
@@ -113,6 +122,14 @@ class Sausimat(MFRC522Sausimat):
                     playlist = playlist_json['playlist']
                     self.logger.info(f'playlist = {playlist}')
                     if playlist:
+                        volume_gain = playlist_json.get('volume_gain')
+                        self.logger.info(f'volume_gain = {volume_gain}')
+                        if volume_gain:
+                            new_vol = int(self.initial_volume) + int(volume_gain)
+                            self.set_volume(new_vol)
+                        else:
+                            self.set_volume(self.initial_volume)
+
                         self.mopidy.play(playlist=playlist)
                         self.last_card = id
                         self.is_pause = False
