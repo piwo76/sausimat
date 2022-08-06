@@ -15,7 +15,7 @@ setuptools.setup(
     packages=setuptools.find_packages(),
     install_requires=[
         'python-mpd2',
-        'serial'
+        'pyserial'
     ],
     python_requires='>=3.6.0',
     entry_points={

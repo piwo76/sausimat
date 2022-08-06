@@ -10,9 +10,9 @@ import serial
 
 
 class Sausimat():
-    def __init__(self, dev='/dev/ttyUSB0', baud_rate=9600, logfile = '/var/log/sausimat.log'):
+    def __init__(self, dev='/dev/ttyUSB0', baud_rate=9600, logfile='/var/log/sausimat.log', log_level='INFO'):
         super().__init__()
-        self.logger = self.create_logger(logfile)
+        self.logger = self.create_logger(logfile, log_level)
         self.logger.info(f'Initializing Sausimat:')
         self.initial_volume = 10
         self.active_id = None
@@ -189,23 +189,21 @@ class Sausimat():
         except:
             pass
 
-    def create_logger(self, logfile_path: str):
+    def create_logger(self, logfile_path: str, log_level: str):
+        level = logging.getLevelName(log_level)
         do_logfile = True
-        if not Path(logfile_path).exists():
+        if not Path(logfile_path).parent.exists():
             do_logfile = False
 
+        logging.basicConfig(level=logging.NOTSET)
         logger = logging.getLogger('sausimat')
         formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
         if do_logfile:
             fh = logging.FileHandler(logfile_path)
-            fh.setLevel(logging.INFO)
+            fh.setLevel(level)
             fh.setFormatter(formatter)
             logger.addHandler(fh)
 
-        ch = logging.StreamHandler()
-        ch.setLevel(logging.ERROR)
-        ch.setFormatter(formatter)
-        logger.addHandler(ch)
         return logger
 
     @staticmethod
