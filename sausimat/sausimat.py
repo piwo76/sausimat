@@ -54,6 +54,8 @@ class Sausimat():
             self.logger.error(f'could not parse the action: {action_str}')
             return
 
+        if 'arduino' in action:
+            self.logger.info(f'arduino successfully connected')
         if 'card' in action:
             uid = action.get('card')
             if uid is None:
