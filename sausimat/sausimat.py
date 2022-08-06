@@ -4,20 +4,17 @@ import threading
 from datetime import datetime
 from pathlib import Path
 from time import sleep
-import RPi.GPIO as GPIO
-from sausimat.mfrc522 import MFRC522Sausimat
-from sausimat.rotary import Rotary, Switch
 from sausimat.mopidy import SausimatMopidy
 import logging
+import serial
 
 
-class Sausimat(MFRC522Sausimat):
+class Sausimat():
     def __init__(self):
         super().__init__()
         self.logger = self.create_logger()
         self.logger.info(f'Initializing Sausimat:')
         self.initial_volume = 10
-        self.logger.info(f'  PIN_B  = {10}')
         self.active_id = None
         self.time_to_stop = 10
         self.is_pause = False
@@ -28,78 +25,95 @@ class Sausimat(MFRC522Sausimat):
         self.shutdown_card = 77688747180
         self.shutdown_initiated_time = None
         self.time_to_shutdown = 5
-        self.rotary = Rotary(17,27,22, initial_counter=self.initial_volume, callback=self.set_volume)
-        self.switch = Switch(12,23,500)
         self.mopidy = SausimatMopidy()
-        self.mopidy.client.setvol(self.initial_volume)
+        self.set_volume(self.initial_volume)
+        self.ser = serial.Serial('/dev/ttyACM0', 9600, timeout=1)
+        self.ser.reset_input_buffer()
 
     def run(self):
         try:
             self.logger.info('Starting Sausimat')
-            #check_rifd_task = asyncio.create_task(self.check_rifd())
-            #check_volume_task = asyncio.create_task(self.rotary.run(self.set_volume))
-
-            self.rotary.run()
-            self.switch.run(self.previous, self.next)
-
-            rfid_thread = threading.Thread(target=self.check_rifd)
-            rfid_thread.start()
 
             check_connection_thread = threading.Thread(target=self.check_connection)
             check_connection_thread.start()
 
-            #await check_rifd_task
+            arduino_thread = threading.Thread(target=self.arduino_serial)
+            arduino_thread.start()
+
             self.logger.info('Sausimat running...')
 
         except KeyboardInterrupt:
             self.logger.info('Detected keyboard interrupt. Cleaning up...')
-            GPIO.cleanup()
         except:
             self.logger.error('Sausimat::run: An unknown error occured')
 
-    def check_rifd(self):
-        self.logger.info('Waiting for RFID...')
-        while True:
-            id, text = self.read_no_block(remove_callback=self.remove_callback)
-            if id and id != self.active_id:
-                # new card --> call new card callback
-                self.new_card(id, text)
-                self.active_id = id
-                self.detect_interval = 2
-                self.remove_callback = self.card_removed
-            elif id and id == self.active_id:
-                # card is still on --> keep reading
-                id = None
+    def perform_action(self, action_str: str):
+        try:
+            action = json.loads(action_str)
+        except:
+            self.logger.error(f'could not parse the action: {action_str}')
+            return
 
-            sleep(self.detect_interval)
+        if 'card' in action:
+            uid = action.get('card')
+            if uid is None:
+                self.card_removed()
+            else:
+                uid_num = self.uid_to_num(uid)
+                if uid_num:
+                    self.new_card(uid_num, text=action_str)
+        if 'volume' in action:
+            volume = action.get('volume')
+            if volume is not None:
+                self.set_volume(volume)
+        if 'button' in action:
+            button_nr = action.get('button')
+            if button_nr == 0:
+                self.next()
+            elif button_nr == 1:
+                self.previous()
+            elif button_nr == 2:
+                self.shutdown()
 
     def check_connection(self):
         while True:
             self.mopidy.check_connection()
             sleep(10)
 
+    def arduino_serial(self):
+        while True:
+            if self.ser.in_waiting > 0:
+                line = self.ser.readline().decode('utf-8').rstrip()
+                self.logger.info(f'New message received from arduino: {line}')
+                self.perform_action(line)
+
     def set_volume(self, value):
         self.logger.info(f'Set volume to {value}')
-        self.mopidy.client.setvol(value)
+        if self.mopidy.client:
+            self.mopidy.client.setvol(value)
 
     def get_volume(self):
         self.logger.info(f'Get volume')
-        cur_vol = self.mopidy.client.status().get('volume')
-        if not cur_vol:
-            return self.initial_volume
-        self.logger.info(f'current volume: {cur_vol}')
-        return cur_vol
+        if self.mopidy.client:
+            cur_vol = self.mopidy.client.status().get('volume')
+            if not cur_vol:
+                return self.initial_volume
+            self.logger.info(f'current volume: {cur_vol}')
+            return cur_vol
+        return None
 
 
-    def next(self, channel):
+    def next(self):
         self.logger.info('Next track')
-        self.mopidy.client.next()
+        if self.mopidy.client:
+            self.mopidy.client.next()
 
-    def previous(self, channnel):
+    def previous(self):
         self.logger.info('Previous track')
-        self.mopidy.client.previous()
+        if self.mopidy.client:
+            self.mopidy.client.previous()
 
-    def new_card(self, id, text):
+    def new_card(self, id: int, text: str):
         try:
             self.logger.info(f'New card detected: id = {id}, text = {text}')
             self.shutdown_initiated_time = None
@@ -110,7 +124,8 @@ class Sausimat(MFRC522Sausimat):
 
             if self.is_pause and self.last_card == id and (datetime.now()-self.remove_time).total_seconds() < self.time_to_stop:
                 self.logger.info(f'Card is paused --> continuing')
-                self.mopidy.client.play()
+                if self.mopidy.client:
+                    self.mopidy.client.play()
                 return
 
             self.mopidy.play(track='local:track:chrchr.mp3')
@@ -160,19 +175,42 @@ class Sausimat(MFRC522Sausimat):
         self.remove_callback = None
         self.active_id = None
         self.detect_interval = 0.1
-        self.mopidy.client.pause()
+        if self.mopidy.client:
+            self.mopidy.client.pause()
         self.is_pause = True
         self.remove_time = datetime.now()
 
+    def shutdown(self):
+        self.logger.info('Shutdown')
+        try:
+            subprocess.run(['sudo', 'shutdown', 'now'])
+        except:
+            pass
+
     def create_logger(self):
+        logfile_path = '/var/log/sausimat.log'
+        do_logfile = True
+        if not Path(logfile_path).exists():
+            do_logfile = False
+
         logger = logging.getLogger('sausimat')
         formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-        fh = logging.FileHandler('/var/log/sausimat.log')
-        fh.setLevel(logging.INFO)
-        fh.setFormatter(formatter)
+        if do_logfile:
+            fh = logging.FileHandler('/var/log/sausimat.log')
+            fh.setLevel(logging.INFO)
+            fh.setFormatter(formatter)
+            logger.addHandler(fh)
+
         ch = logging.StreamHandler()
         ch.setLevel(logging.ERROR)
         ch.setFormatter(formatter)
-        logger.addHandler(fh)
         logger.addHandler(ch)
         return logger
+
+    @staticmethod
+    def uid_to_num(uid):
+        uid = ''.join(uid.split())
+        try:
+            return int(uid, 16)
+        except:
+            return None

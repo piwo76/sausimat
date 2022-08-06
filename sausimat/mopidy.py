@@ -9,14 +9,13 @@ class SausimatMopidy:
     def __init__(self):
         self.logger = logging.getLogger('sausimat')
         self.logger.info(f'Initializing Mopidy')
+        self.client = None
         self.connect()
         self.play(track='local:track:sausimat.mp3')
-        
 
     def connect(self, timeout_sec = 300):
         self.logger.info(f'Connecting to Mopidy...')
         start_time = datetime.now()
-        self.client = None
         while not self.client:
             self.client = self.connectMPD()
             if not self.client:
@@ -51,25 +50,26 @@ class SausimatMopidy:
         self.logger.info(f'  nr tracks = {tracks}')
         self.logger.info(f'  search_string = {search_string}')
         self.logger.info(f'  playlist = {playlist}')
-        try:
-            self.client.stop()
-            self.client.clear()
-            if tracks and isinstance(tracks, list):
-                for track in tracks:
+        if self.client:
+            try:
+                self.client.stop()
+                self.client.clear()
+                if tracks and isinstance(tracks, list):
+                    for track in tracks:
+                        self.client.add(track)
+                elif track:
                     self.client.add(track)
-            elif track:
-                self.client.add(track)
-            elif search_string:
-                self.client.searchadd('file', search_string)
-            elif playlist:
-                self.client.load(playlist)
+                elif search_string:
+                    self.client.searchadd('file', search_string)
+                elif playlist:
+                    self.client.load(playlist)
 
-            self.logger.info(f'start playing...')
-            self.client.play(0)
-        except:
-            self.logger.error(f'Could not play the requested tracks')
-            sleep(1)
-            self.check_connection()
+                self.logger.info(f'start playing...')
+                self.client.play(0)
+            except:
+                self.logger.error(f'Could not play the requested tracks')
+                sleep(1)
+                self.check_connection()
 
     def create_playlist(self, name, search_string=None, overwrite=False, type='file'):
         self.logger.info(f'Creating playlist:')

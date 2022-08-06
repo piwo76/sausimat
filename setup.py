@@ -5,7 +5,7 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name="sausimat",
-    version="0.0.1",
+    version="0.0.2",
     author="piwo",
     author_email="piwo76@gmail.com",
     description="Musicbox",
@@ -14,9 +14,8 @@ setuptools.setup(
     url="https://https://github.com/piwo76/sausimat",
     packages=setuptools.find_packages(),
     install_requires=[
-        'spidev',
-        'mfrc522',
         'python-mpd2',
+        'serial'
     ],
     python_requires='>=3.6.0',
     entry_points={
