@@ -76,6 +76,10 @@ class Sausimat():
             elif button_nr == 2:
                 self.shutdown()
 
+    def perform_action(self, action: str):
+        pass
+
+
     def check_connection(self):
         while True:
             self.mopidy.check_connection()
