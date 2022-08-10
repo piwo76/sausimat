@@ -69,16 +69,12 @@ class Sausimat():
                 self.set_volume(volume)
         if 'button' in action:
             button_nr = action.get('button')
-            if button_nr == 1:
-                self.next()
-            elif button_nr == 0:
+            if button_nr == 0:
                 self.previous()
+            elif button_nr == 1:
+                self.next()
             elif button_nr == 2:
                 self.shutdown()
-
-    def perform_action(self, action: str):
-        pass
-
 
     def check_connection(self):
         while True:
