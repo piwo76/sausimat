@@ -4,20 +4,17 @@ import threading
 from datetime import datetime
 from pathlib import Path
 from time import sleep
-import RPi.GPIO as GPIO
-from sausimat.mfrc522 import MFRC522Sausimat
-from sausimat.rotary import Rotary, Switch
 from sausimat.mopidy import SausimatMopidy
 import logging
+import serial
 
 
-class Sausimat(MFRC522Sausimat):
-    def __init__(self):
+class Sausimat():
+    def __init__(self, dev='/dev/ttyUSB0', baud_rate=9600, logfile='/var/log/sausimat.log', log_level='INFO'):
         super().__init__()
-        self.logger = self.create_logger()
+        self.logger = self.create_logger(logfile, log_level)
         self.logger.info(f'Initializing Sausimat:')
         self.initial_volume = 10
-        self.logger.info(f'  PIN_B  = {10}')
         self.active_id = None
         self.time_to_stop = 10
         self.is_pause = False
@@ -28,78 +25,96 @@ class Sausimat(MFRC522Sausimat):
         self.shutdown_card = 77688747180
         self.shutdown_initiated_time = None
         self.time_to_shutdown = 5
-        self.rotary = Rotary(17,27,22, initial_counter=self.initial_volume, callback=self.set_volume)
-        self.switch = Switch(12,23,500)
         self.mopidy = SausimatMopidy()
-        self.mopidy.client.setvol(self.initial_volume)
+        self.ser = serial.Serial(dev, baud_rate, timeout=1)
+        self.ser.reset_input_buffer()
 
     def run(self):
         try:
             self.logger.info('Starting Sausimat')
-            #check_rifd_task = asyncio.create_task(self.check_rifd())
-            #check_volume_task = asyncio.create_task(self.rotary.run(self.set_volume))
-
-            self.rotary.run()
-            self.switch.run(self.previous, self.next)
-
-            rfid_thread = threading.Thread(target=self.check_rifd)
-            rfid_thread.start()
 
             check_connection_thread = threading.Thread(target=self.check_connection)
             check_connection_thread.start()
 
-            #await check_rifd_task
+            arduino_thread = threading.Thread(target=self.arduino_serial)
+            arduino_thread.start()
+
             self.logger.info('Sausimat running...')
 
         except KeyboardInterrupt:
             self.logger.info('Detected keyboard interrupt. Cleaning up...')
-            GPIO.cleanup()
         except:
             self.logger.error('Sausimat::run: An unknown error occured')
 
-    def check_rifd(self):
-        self.logger.info('Waiting for RFID...')
-        while True:
-            id, text = self.read_no_block(remove_callback=self.remove_callback)
-            if id and id != self.active_id:
-                # new card --> call new card callback
-                self.new_card(id, text)
-                self.active_id = id
-                self.detect_interval = 2
-                self.remove_callback = self.card_removed
-            elif id and id == self.active_id:
-                # card is still on --> keep reading
-                id = None
+    def perform_action(self, action_str: str):
+        try:
+            action = json.loads(action_str)
+        except:
+            self.logger.error(f'could not parse the action: {action_str}')
+            return
 
-            sleep(self.detect_interval)
+        if 'arduino' in action:
+            self.logger.info(f'arduino successfully connected')
+        if 'card' in action:
+            uid = action.get('card')
+            if uid is None:
+                self.card_removed()
+            else:
+                uid_num = self.uid_to_num(uid)
+                if uid_num:
+                    self.new_card(uid_num, text=action_str)
+        if 'volume' in action:
+            volume = action.get('volume')
+            if volume is not None:
+                self.set_volume(volume)
+        if 'button' in action:
+            button_nr = action.get('button')
+            if button_nr == 0:
+                self.previous()
+            elif button_nr == 1:
+                self.next()
+            elif button_nr == 2:
+                self.shutdown()
 
     def check_connection(self):
         while True:
             self.mopidy.check_connection()
             sleep(10)
 
+    def arduino_serial(self):
+        while True:
+            if self.ser.in_waiting > 0:
+                line = self.ser.readline().decode('utf-8').rstrip()
+                self.logger.info(f'New message received from arduino: {line}')
+                self.perform_action(line)
+
     def set_volume(self, value):
         self.logger.info(f'Set volume to {value}')
-        self.mopidy.client.setvol(value)
+        if self.mopidy.client:
+            self.mopidy.client.setvol(value)
 
     def get_volume(self):
         self.logger.info(f'Get volume')
-        cur_vol = self.mopidy.client.status().get('volume')
-        if not cur_vol:
-            return self.initial_volume
-        self.logger.info(f'current volume: {cur_vol}')
-        return cur_vol
+        if self.mopidy.client:
+            cur_vol = self.mopidy.client.status().get('volume')
+            if not cur_vol:
+                return self.initial_volume
+            self.logger.info(f'current volume: {cur_vol}')
+            return cur_vol
+        return None
 
 
-    def next(self, channel):
+    def next(self):
         self.logger.info('Next track')
-        self.mopidy.client.next()
+        if self.mopidy.client:
+            self.mopidy.client.next()
 
-    def previous(self, channnel):
+    def previous(self):
         self.logger.info('Previous track')
-        self.mopidy.client.previous()
+        if self.mopidy.client:
+            self.mopidy.client.previous()
 
-    def new_card(self, id, text):
+    def new_card(self, id: int, text: str):
         try:
             self.logger.info(f'New card detected: id = {id}, text = {text}')
             self.shutdown_initiated_time = None
@@ -110,7 +125,8 @@ class Sausimat(MFRC522Sausimat):
 
             if self.is_pause and self.last_card == id and (datetime.now()-self.remove_time).total_seconds() < self.time_to_stop:
                 self.logger.info(f'Card is paused --> continuing')
-                self.mopidy.client.play()
+                if self.mopidy.client:
+                    self.mopidy.client.play()
                 return
 
             self.mopidy.play(track='local:track:chrchr.mp3')
@@ -122,14 +138,6 @@ class Sausimat(MFRC522Sausimat):
                     playlist = playlist_json['playlist']
                     self.logger.info(f'playlist = {playlist}')
                     if playlist:
-                        volume_gain = playlist_json.get('volume_gain')
-                        self.logger.info(f'volume_gain = {volume_gain}')
-                        if volume_gain:
-                            new_vol = int(self.initial_volume) + int(volume_gain)
-                            self.set_volume(new_vol)
-                        else:
-                            self.set_volume(self.initial_volume)
-
                         self.mopidy.play(playlist=playlist)
                         self.last_card = id
                         self.is_pause = False
@@ -160,19 +168,39 @@ class Sausimat(MFRC522Sausimat):
         self.remove_callback = None
         self.active_id = None
         self.detect_interval = 0.1
-        self.mopidy.client.pause()
+        if self.mopidy.client:
+            self.mopidy.client.pause()
         self.is_pause = True
         self.remove_time = datetime.now()
 
-    def create_logger(self):
+    def shutdown(self):
+        self.logger.info('Shutdown')
+        try:
+            subprocess.run(['sudo', 'shutdown', 'now'])
+        except:
+            pass
+
+    def create_logger(self, logfile_path: str, log_level: str):
+        level = logging.getLevelName(log_level)
+        do_logfile = True
+        if not Path(logfile_path).parent.exists():
+            do_logfile = False
+
+        logging.basicConfig(level=logging.NOTSET)
         logger = logging.getLogger('sausimat')
         formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-        fh = logging.FileHandler('/var/log/sausimat.log')
-        fh.setLevel(logging.INFO)
-        fh.setFormatter(formatter)
-        ch = logging.StreamHandler()
-        ch.setLevel(logging.ERROR)
-        ch.setFormatter(formatter)
-        logger.addHandler(fh)
-        logger.addHandler(ch)
+        if do_logfile:
+            fh = logging.FileHandler(logfile_path)
+            fh.setLevel(level)
+            fh.setFormatter(formatter)
+            logger.addHandler(fh)
+
         return logger
+
+    @staticmethod
+    def uid_to_num(uid):
+        uid = ''.join(uid.split())
+        try:
+            return int(uid, 16)
+        except:
+            return None

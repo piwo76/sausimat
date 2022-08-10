@@ -1,6 +1,3 @@
-spidev==3.4
-mfrc522==0.0.7
 python-mpd2==1.0.0
-pi-rc522==2.2.1
-pyky040==0.1.4
-git+git://github.com/ismailof/mopidy-json-client@master
+pyserial==3.5
+git+https://github.com/ismailof/mopidy-json-client
