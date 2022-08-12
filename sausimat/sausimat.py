@@ -75,6 +75,8 @@ class Sausimat():
                 self.next()
             elif button_nr == 2:
                 self.shutdown()
+            elif button_nr == 3:
+                self.reboot()
 
     def check_connection(self):
         while True:
@@ -177,6 +179,13 @@ class Sausimat():
         self.logger.info('Shutdown')
         try:
             subprocess.run(['sudo', 'shutdown', 'now'])
+        except:
+            pass
+
+    def reboot(self):
+        self.logger.info('Reboot')
+        try:
+            subprocess.run(['sudo', 'reboot'])
         except:
             pass
 
