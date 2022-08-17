@@ -34,7 +34,7 @@
 #include <Keypad.h>
 
 #define SS_PIN 10
-#define RST_PIN 2
+#define RST_PIN 9
 #define NUMROWS 1
 #define NUMCOLS 3
 #define LONGPRESSINTERVAL_MS 3000
@@ -42,7 +42,7 @@
 byte buttons[NUMROWS][NUMCOLS] = {
     {0, 1, 2}};
     
-byte rowPins[NUMROWS] = {9};
+byte rowPins[NUMROWS] = {2};
 byte colPins[NUMCOLS] = {8, 7, 6};
 
 Keypad buttonpad = Keypad(makeKeymap(buttons), rowPins, colPins, NUMROWS, NUMCOLS);
@@ -52,6 +52,7 @@ byte POT_PIN = A1;
 MFRC522 mfrc522(SS_PIN, RST_PIN);   // Create MFRC522 instance.
 bool locked = false;
 int volume = 0;
+unsigned long timeRemoved = 0;
 unsigned long timePressed = 0;
 
 /* Initialize. */
@@ -71,6 +72,7 @@ void setup() {
   mfrc522.uid.size = 0;
   
   volume = 0;
+  timeRemoved = 0;
 }
 
 
@@ -78,6 +80,11 @@ void loop() {
   // Check potentiometer and buttons
   check_poti();
   check_buttons();
+  
+  if (timeRemoved > 0 && (millis() - timeRemoved) > 500 ){
+    Serial.println(F("{\"card\": null}"));
+    timeRemoved = 0;
+  }
     
   // Wake up all cards present within the sensor/reader range.
   bool cardPresent = PICC_IsAnyCardPresent();
@@ -96,25 +103,28 @@ void loop() {
   // If a card was locked and now is removed, other cards will not be selected until next loop,
   // after mfrc522uid.size has been set to 0.
   MFRC522::StatusCode result = mfrc522.PICC_Select(&mfrc522.uid,8*mfrc522.uid.size);
-
+  
   if(!locked && result == MFRC522::STATUS_OK)
   {
     locked=true;
     // Action on card detection.
-    print_uid();
+    if(timeRemoved == 0){
+      print_uid();    
+    }
+    timeRemoved = 0;
   } else if(locked && result != MFRC522::STATUS_OK)
   {
     locked=false;
     mfrc522.uid.size = 0;
-    // Action on card removal.
-    Serial.println(F("{\"card\": null}"));
+    // Action on card removal.    
+    timeRemoved = millis();  
   } else if(!locked && result != MFRC522::STATUS_OK)
   {
     // Clear locked card data just in case some data was retrieved in the select procedure
     // but an error prevented locking.
-    mfrc522.uid.size = 0;
+    mfrc522.uid.size = 0;    
   }
-
+  
   mfrc522.PICC_HaltA();     
 }
 
