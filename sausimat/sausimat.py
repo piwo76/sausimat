@@ -1,40 +1,37 @@
 import json
 import subprocess
 import threading
+import time
 from datetime import datetime
 from pathlib import Path
-from time import sleep
-from sausimat.mopidy import SausimatMopidy
-import logging
 import serial
+from natsort import natsorted
+
+from sausimat.logger import create_logger
+from sausimat.player import Player
 
 
 class Sausimat():
-    def __init__(self, dev='/dev/ttyUSB0', baud_rate=9600, logfile='/var/log/sausimat.log', log_level='INFO'):
+    def __init__(self, dev='/dev/ttyUSB0', media_dir: str = '/media',  baud_rate=9600, logfile='/var/log/sausimat.log', log_level='INFO', new_card_sound: str = None, startup_sound = None):
         super().__init__()
-        self.logger = self.create_logger(logfile, log_level)
+        self.logger = create_logger('sausimat', logfile, log_level)
         self.logger.info(f'Initializing Sausimat:')
-        self.initial_volume = 10
-        self.active_id = None
         self.time_to_stop = 10
         self.is_pause = False
         self.last_card = None
         self.remove_time = None
         self.detect_interval = 0.1
-        self.remove_callback = None
-        self.shutdown_card = 77688747180
-        self.shutdown_initiated_time = None
-        self.time_to_shutdown = 5
-        self.mopidy = SausimatMopidy()
         self.ser = serial.Serial(dev, baud_rate, timeout=1)
         self.ser.reset_input_buffer()
+        self.media_dir = Path(media_dir)
+        self.new_card_sound = str(self.media_dir / 'chrchr.mp3') if not new_card_sound else new_card_sound
+        self.startup_sound = str(self.media_dir / 'sausimat.mp3') if not startup_sound else startup_sound
+        self.player = Player()
+        self.player.play(self.startup_sound, wait=True)
 
     def run(self):
         try:
             self.logger.info('Starting Sausimat')
-
-            check_connection_thread = threading.Thread(target=self.check_connection)
-            check_connection_thread.start()
 
             arduino_thread = threading.Thread(target=self.arduino_serial)
             arduino_thread.start()
@@ -78,11 +75,6 @@ class Sausimat():
             elif button_nr == 3:
                 self.reboot()
 
-    def check_connection(self):
-        while True:
-            self.mopidy.check_connection()
-            sleep(10)
-
     def arduino_serial(self):
         while True:
             if self.ser.in_waiting > 0:
@@ -92,88 +84,55 @@ class Sausimat():
 
     def set_volume(self, value):
         self.logger.info(f'Set volume to {value}')
-        if self.mopidy.client:
-            self.mopidy.client.setvol(value)
-
-    def get_volume(self):
-        self.logger.info(f'Get volume')
-        if self.mopidy.client:
-            cur_vol = self.mopidy.client.status().get('volume')
-            if not cur_vol:
-                return self.initial_volume
-            self.logger.info(f'current volume: {cur_vol}')
-            return cur_vol
-        return None
-
+        self.player.set_volume(value)
 
     def next(self):
         self.logger.info('Next track')
-        if self.mopidy.client:
-            self.mopidy.client.next()
+        self.player.next()
 
     def previous(self):
         self.logger.info('Previous track')
-        if self.mopidy.client:
-            self.mopidy.client.previous()
+        self.player.previous()
 
-    def new_card(self, id: int, text: str):
+    def new_card(self, id: int, text: str = None):
         try:
             self.logger.info(f'New card detected: id = {id}, text = {text}')
-            self.shutdown_initiated_time = None
-            if id == self.shutdown_card:
-                self.logger.info(f'This is the shutdown card --> Initiating shutdown')
-                self.shutdown_initiated_time = datetime.now()
-                return
-
             if self.is_pause and self.last_card == id and (datetime.now()-self.remove_time).total_seconds() < self.time_to_stop:
                 self.logger.info(f'Card is paused --> continuing')
-                if self.mopidy.client:
-                    self.mopidy.client.play()
+                self.player.unpause()
+                self.remove_time = None
                 return
 
-            self.mopidy.play(track='local:track:chrchr.mp3')
-            tag_playlist_file = Path(f'/media/playlists/{id}.json')
+            self.player.play(self.new_card_sound, wait=True)
+
+            tag_playlist_file = self.media_dir / f'playlists/{id}.json'
             self.logger.info(f'tag_playlist_file = {tag_playlist_file}')
             if tag_playlist_file.exists():
                 with open(tag_playlist_file) as file:
                     playlist_json = json.load(file)
-                    playlist = playlist_json['playlist']
-                    self.logger.info(f'playlist = {playlist}')
-                    if playlist:
-                        self.mopidy.play(playlist=playlist)
-                        self.last_card = id
-                        self.is_pause = False
-                        self.remove_time = None
+                    folder = playlist_json.get('folder')
+                    if folder:
+                        folder = self.media_dir / folder
+                        if folder.exists():
+                            self.logger.info(f'folder = {folder}')
+                            playlist = [str(f) for f in natsorted(folder.glob('*.mp3'), key=str)]
+                            self.player.play(playlist)
+                            self.last_card = id
+                            self.is_pause = False
+                            self.remove_time = None
             else:
                 self.logger.info('tag_playlist_file does not exist')
-        except:
-            self.logger.error(f'Could not play card with id = {id}')
-
-        print(f"new card: id = {id}, text = {text}")
+        except Exception as e:
+            self.logger.error(f'Could not play card with id = {id}: {str(e)}')
 
     def card_removed(self):
         self.logger.info('Card removed')
-        if self.shutdown_initiated_time:
-            if (datetime.now() - self.shutdown_initiated_time).total_seconds() > self.time_to_shutdown:
-                self.logger.info(f'Card was on longer than {self.time_to_shutdown} --> Shutdown!')
-                self.mopidy.play(track='local:track:theme2.mp3')
-                sleep(4)
-                subprocess.run(["sudo", "shutdown"])
-                return
-            else:
-                self.logger.info(f'Card was on shorter than {self.time_to_shutdown} --> Restart!')
-                self.mopidy.play(track='local:track:bis_spaeter.mp3')
-                sleep(5)
-                subprocess.run(["sudo", "reboot"])
-                return
-
-        self.remove_callback = None
-        self.active_id = None
         self.detect_interval = 0.1
-        if self.mopidy.client:
-            self.mopidy.client.pause()
+        self.player.pause()
         self.is_pause = True
         self.remove_time = datetime.now()
+        check_stop_thread = threading.Thread(target=self.check_for_stop)
+        check_stop_thread.start()
 
     def shutdown(self):
         self.logger.info('Shutdown')
@@ -189,22 +148,13 @@ class Sausimat():
         except:
             pass
 
-    def create_logger(self, logfile_path: str, log_level: str):
-        level = logging.getLevelName(log_level)
-        do_logfile = True
-        if not Path(logfile_path).parent.exists():
-            do_logfile = False
-
-        logging.basicConfig(level=logging.NOTSET)
-        logger = logging.getLogger('sausimat')
-        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-        if do_logfile:
-            fh = logging.FileHandler(logfile_path)
-            fh.setLevel(level)
-            fh.setFormatter(formatter)
-            logger.addHandler(fh)
-
-        return logger
+    def check_for_stop(self):
+        time.sleep(self.time_to_stop)
+        if self.remove_time is not None:
+            self.logger.info(f'card removed longer than {self.time_to_stop}s --> stopping playlist')
+            self.player.stop()
+            self.remove_time = None
+            self.last_card = None
 
     @staticmethod
     def uid_to_num(uid):

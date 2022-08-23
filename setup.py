@@ -14,7 +14,7 @@ setuptools.setup(
     url="https://https://github.com/piwo76/sausimat",
     packages=setuptools.find_packages(),
     install_requires=[
-        'python-mpd2',
+        'pygame',
         'pyserial'
     ],
     python_requires='>=3.6.0',
